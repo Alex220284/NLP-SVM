@@ -4,19 +4,22 @@
 #@contact: ruc_hwh_2013@163.com
 # Created on 2018/1/21 上午12:41
 
+
 from __future__ import division
+from pyspark import SparkConf, SparkContext
 from gensim import corpora, models
 from scipy.sparse import csr_matrix
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn import svm
 import numpy as np
 import os
 import re
-import time
-import logging
 import jieba
 import pickle as pkl
+from pyspark.mllib.classification import SVMWithSGD, SVMModel
+from pyspark.mllib.regression import LabeledPoint
 
+
+sc = SparkContext('local')
 path_doc_root = './data/'  # 根目录 即存放按类分类好的问本纪
 path_tmp = './tmp'  # 存放中间结果的位置
 path_dictionary = os.path.join(path_tmp, 'THUNews.dict')
@@ -85,20 +88,42 @@ def rm_char(text):
 
 
 def svm_classify(train_set, train_tag, test_set, test_tag):
+    train_data = train_set
+    for idx in range(len(train_set)):
+        train_data[idx] = np.append(train_set[idx], train_tag[idx])
+    train_data = sc.parallelize(train_data)
+    test_data = test_set
+    for idx in range(len(test_set)):
+        test_data[idx] = np.append(test_set[idx], test_tag[idx])
+    test_data = sc.parallelize(test_data)
+    test_data = test_data.map(
+        lambda x: LabeledPoint(x[-1], x[:x.shape[0] - 1]))
+    train_data = train_data.map(
+        lambda x: LabeledPoint(x[-1], x[:x.shape[0] - 1]))
+    model = SVMWithSGD.train(train_data, iterations=150, step=0.8)
+    labelsAndPreds = train_data.map(
+        lambda p: (
+            p.label, model.predict(
+                p.features)))
+    trainErr = labelsAndPreds.filter(
+        lambda lp: lp[0] != lp[1]).count() / float(train_data.count())
+    labelsAndPreds_test = test_data.map(
+        lambda p: (p.label, model.predict(p.features)))
+    testErr = labelsAndPreds_test.filter(
+        lambda lp: lp[0] != lp[1]).count() / float(test_data.count())
+    #clf = svm.LinearSVC()
+    #clf_res = clf.fit(train_set, train_tag)
+    #train_pred = clf_res.predict(train_set)
+    #test_pred = clf_res.predict(test_set)
 
-    clf = svm.LinearSVC()
-    clf_res = clf.fit(train_set, train_tag)
-    train_pred = clf_res.predict(train_set)
-    test_pred = clf_res.predict(test_set)
-
-    train_err_num, train_err_ratio = checkPred(train_tag, train_pred)
-    test_err_num, test_err_ratio = checkPred(test_tag, test_pred)
+    #train_err_num, train_err_ratio = checkPred(train_tag, train_pred)
+    #test_err_num, test_err_ratio = checkPred(test_tag, test_pred)
 
     print('=== 分类训练完毕，分类结果如下 ===')
-    print('训练集误差: {e}'.format(e=train_err_ratio))
-    print('检验集误差: {e}'.format(e=test_err_ratio))
+    print('训练集误差: {e}'.format(e=trainErr))
+    print('检验集误差: {e}'.format(e=testErr))
 
-    return clf_res
+    return model
 
 
 def checkPred(data_tag, data_pred):
@@ -112,7 +137,8 @@ def checkPred(data_tag, data_pred):
     err_ratio = err_count / data_tag.__len__()
     return [err_count, err_ratio]
 
-def create_dictionary(path_dictionary,files):
+
+def create_dictionary(path_dictionary, files):
     if not os.path.exists(path_dictionary):
         print('=== 未检测到有词典存在，开始遍历生成词典 ===')
         dictionary = corpora.Dictionary()
@@ -130,6 +156,7 @@ def create_dictionary(path_dictionary,files):
     else:
         print('=== 检测到词典已经存在，跳过该阶段 ===')
 
+
 def train_model():
     dictionary = None
     corpus_tfidf = None
@@ -140,10 +167,10 @@ def train_model():
         os.makedirs(path_tmp)
     files = loadFiles(path_doc_root)
 
-    ##生成字典
+    # 生成字典
     create_dictionary(path_dictionary, files)
 
-    ## 将文档转化成tfidf
+    # 将文档转化成tfidf
     if not os.path.exists(path_tmp_tfidf):
         print('=== 未检测到有tfidf文件夹存在，开始生成tfidf向量 ===')
         dictionary = corpora.Dictionary.load(path_dictionary)
@@ -307,6 +334,7 @@ def train_model():
     else:
         print('=== 检测到分类器已经生成，跳过该阶段 ===')
 
+
 def predict(doc):
     files = os.listdir(path_tmp_lsi)
     dictionary = corpora.Dictionary.load(path_dictionary)
@@ -336,13 +364,13 @@ def predict(doc):
         cols.append(item[0])
         rows.append(0)
     demo_matrix = csr_matrix((data, (rows, cols))).toarray()
-    x = predictor.predict(demo_matrix)
-    print('分类结果为：{x}'.format(x=catg_list[x[0]]))
+    x = predictor.predict(sc.parallelize(demo_matrix))
+    print('分类结果为：{x}'.format(x=catg_list[x.collect()[0]]))
 
 
 if __name__ == '__main__':
-    doc='''
-    狼牙月，伊人憔悴
+    doc = '''
+    狼牙月，伊人憔悴，我举杯，饮尽了风雪
     '''
     if not os.path.exists(path_tmp):
         train_model()
