@@ -28,8 +28,8 @@ def predict(doc):
         t = file.split('.')[0]
         if t not in catg_list:
             catg_list.append(t)
-    print("原文本内容为：")
-    print(doc)
+    # print("原文本内容为：")
+    # print(doc)
     demo_doc = list(jieba.cut(doc, cut_all=False))
     demo_bow = dictionary.doc2bow(demo_doc)
     tfidf_model = models.TfidfModel(dictionary=dictionary)
@@ -44,10 +44,11 @@ def predict(doc):
         rows.append(0)
     demo_matrix = csr_matrix((data, (rows, cols))).toarray()
     x = predictor.predict(demo_matrix)
-    print('分类结果为：{x}'.format(x=catg_list[x[0]]))
+    # print('分类结果为：{x}'.format(x=catg_list[x[0]]))
+    return catg_list[x[0]]
 
 if __name__ == '__main__':
     doc = """
     狼牙月，伊人憔悴，我举杯，饮尽了风雪
     """
-    predict(doc)
+    print predict(doc)
