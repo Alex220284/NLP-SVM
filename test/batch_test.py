@@ -11,6 +11,7 @@ from src.train import train_model
 from src.predict import predict
 from conf.batch_test_conf import EXCEL_PATH, SAVE_PATH
 import pandas as pd
+from conf.logger_conf import logger
 
 
 """
@@ -28,6 +29,7 @@ def batch_test(excel, save_path):
     for idx in range(mydata.shape[1]):
         f.write(names[idx].encode('utf-8') + '\t' + predict(lyrics[idx].encode('utf-8')) + '\n')
     f.close()
+    logger.info('success')
 
 if __name__ == '__main__':
     batch_test(EXCEL_PATH, SAVE_PATH)

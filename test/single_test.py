@@ -13,6 +13,7 @@
 
 from src.train import train_model
 from src.predict import predict
+from conf.logger_conf import logger
 
 
 def single_test(doc):
@@ -20,6 +21,7 @@ def single_test(doc):
     m = train_model()
     m.train_model()
     predict(doc)
+    logger.info('预测成功')
 
 if __name__ == '__main__':
     doc = """我爱你"""

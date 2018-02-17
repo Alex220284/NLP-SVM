@@ -16,16 +16,15 @@ import os
 import re
 import jieba
 import pickle as pkl
-from conf.trainModel_conf import path_doc_root, path_tmp, path_dictionary, path_tmp_tfidf, path_tmp_lsi, path_tmp_lsimodel, path_tmp_predictor
+from conf.trainModel_conf import path_doc_root, path_tmp, path_dictionary, path_tmp_tfidf, path_tmp_lsi, \
+    path_tmp_lsimodel, path_tmp_predictor
 from tools.file_reader import loadFiles
+from conf.logger_conf import logger
 
 
 class train_model(object):
     def __init__(self):
-        """
-        添加日记文件
-        """
-        pass
+        self.logger = logger
 
     def convert_doc_to_wordlist(self, str_doc, cut_all):
         sent_list = str_doc.split('\n')
@@ -64,9 +63,9 @@ class train_model(object):
         train_err_num, train_err_ratio = self.checkPred(train_tag, train_pred)
         test_err_num, test_err_ratio = self.checkPred(test_tag, test_pred)
 
-        print('=== 分类训练完毕，分类结果如下 ===')
-        print('训练集误差: {e}'.format(e=train_err_ratio))
-        print('检验集误差: {e}'.format(e=test_err_ratio))
+        self.logger.info('=== 分类训练完毕，分类结果如下 ===')
+        self.logger.info('训练集误差: {e}'.format(e=train_err_ratio))
+        self.logger.info('检验集误差: {e}'.format(e=test_err_ratio))
 
         return clf_res
 
@@ -84,7 +83,7 @@ class train_model(object):
 
     def create_dictionary(self, path_dictionary, files):
         if not os.path.exists(path_dictionary):
-            print('=== 未检测到有词典存在，开始遍历生成词典 ===')
+            self.logger.info('=== 未检测到有词典存在，开始遍历生成词典 ===')
             dictionary = corpora.Dictionary()
             for i, msg in enumerate(files):
                 catg = msg[0]
@@ -98,7 +97,7 @@ class train_model(object):
             dictionary.compactify()
             dictionary.save(path_dictionary)
         else:
-            print('=== 检测到词典已经存在，跳过该阶段 ===')
+            self.logger.info('=== 检测到词典已经存在，跳过该阶段 ===')
 
     def train_model(self):
         dictionary = None
@@ -115,7 +114,7 @@ class train_model(object):
 
         # 将文档转化成tfidf
         if not os.path.exists(path_tmp_tfidf):
-            print('=== 未检测到有tfidf文件夹存在，开始生成tfidf向量 ===')
+            self.logger.info('=== 未检测到有tfidf文件夹存在，开始生成tfidf向量 ===')
             dictionary = corpora.Dictionary.load(path_dictionary)
             os.makedirs(path_tmp_tfidf)
             tfidf_model = models.TfidfModel(dictionary=dictionary)
@@ -140,21 +139,21 @@ class train_model(object):
                         c=catg),
                     corpus_tfidf.get(catg),
                     id2word=dictionary)
-                print(
+                self.logger.info(
                     'catg {c} has been transformed into tfidf vector'.format(
                         c=catg))
-            print('=== tfidf向量已经生成 ===')
+                self.logger.info('=== tfidf向量已经生成 ===')
         else:
-            print('=== 检测到tfidf向量已经生成，跳过该阶段 ===')
+            self.logger.info('=== 检测到tfidf向量已经生成，跳过该阶段 ===')
 
         # # ===================================================================
         # # # # 第三阶段，  开始将tfidf转化成lsi
         if not os.path.exists(path_tmp_lsi):
-            print('=== 未检测到有lsi文件夹存在，开始生成lsi向量 ===')
+            self.logger.info('=== 未检测到有lsi文件夹存在，开始生成lsi向量 ===')
             if not dictionary:
                 dictionary = corpora.Dictionary.load(path_dictionary)
             if not corpus_tfidf:  # 如果跳过了第二阶段，则从指定位置读取tfidf文档
-                print('--- 未检测到tfidf文档，开始从磁盘中读取 ---')
+                self.logger.info('--- 未检测到tfidf文档，开始从磁盘中读取 ---')
                 # 从对应文件夹中读取所有类别
                 files = os.listdir(path_tmp_tfidf)
                 catg_list = []
@@ -188,7 +187,7 @@ class train_model(object):
             pkl.dump(lsi_model, lsi_file)
             lsi_file.close()
             del corpus_tfidf_total  # lsi model已经生成，释放变量空间
-            print('--- lsi模型已经生成 ---')
+            self.logger.info('--- lsi模型已经生成 ---')
 
             # 生成corpus of lsi, 并逐步去掉 corpus of tfidf
             corpus_lsi = {}
@@ -203,16 +202,16 @@ class train_model(object):
                         c=catg),
                     corpu,
                     id2word=dictionary)
-            print('=== lsi向量已经生成 ===')
+            self.logger.info('=== lsi向量已经生成 ===')
         else:
-            print('=== 检测到lsi向量已经生成，跳过该阶段 ===')
+            self.logger.info('=== 检测到lsi向量已经生成，跳过该阶段 ===')
 
         # # ===================================================================
         # # # # 第四阶段，  分类
         if not os.path.exists(path_tmp_predictor):
-            print('=== 未检测到判断器存在，开始进行分类过程 ===')
+            self.logger.info('=== 未检测到判断器存在，开始进行分类过程 ===')
             if not corpus_lsi:  # 如果跳过了第三阶段
-                print('--- 未检测到lsi文档，开始从磁盘中读取 ---')
+                self.logger.info('--- 未检测到lsi文档，开始从磁盘中读取 ---')
                 files = os.listdir(path_tmp_lsi)
                 catg_list = []
                 for file in files:
@@ -225,7 +224,7 @@ class train_model(object):
                     path = '{f}{s}{c}.mm'.format(f=path_tmp_lsi, s=os.sep, c=catg)
                     corpus = corpora.MmCorpus(path)
                     corpus_lsi[catg] = corpus
-                print('--- lsi文档读取完毕，开始进行分类 ---')
+                self.logger.info('--- lsi文档读取完毕，开始进行分类 ---')
 
             tag_list = []
             doc_num_list = []
@@ -275,7 +274,7 @@ class train_model(object):
             pkl.dump(predictor, x)
             x.close()
         else:
-            print('=== 检测到分类器已经生成，跳过该阶段 ===')
+            self.logger.info('=== 检测到分类器已经生成，跳过该阶段 ===')
 
 
 if __name__ == '__main__':
